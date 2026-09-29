@@ -1,0 +1,142 @@
+// Prisma schema for the Online Tuition Platform
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  STUDENT
+  TUTOR
+  ADMIN
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String
+  role          Role      @default(STUDENT)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  tutorProfile      TutorProfile?
+  bookingsAsStudent  Booking[]      @relation("StudentBookings")
+  reviewsWritten     Review[]       @relation("ReviewAuthor")
+  sentMessages       Message[]      @relation("MessageSender")
+  receivedMessages   Message[]      @relation("MessageReceiver")
+}
+
+model TutorProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  bio         String?
+  subjects    String[] // e.g. ["Math", "Physics"]
+  hourlyRate  Float
+  ratingAvg   Float    @default(0)
+  ratingCount Int      @default(0)
+
+  availability Availability[]
+  bookings     Booking[]       @relation("TutorBookings")
+  reviews      Review[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Availability {
+  id         String       @id @default(cuid())
+  tutorId    String
+  tutor      TutorProfile @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  dayOfWeek  Int          // 0 = Sunday ... 6 = Saturday
+  startTime  String       // "09:00" (24h, stored as string, interpreted in tutor's timezone)
+  endTime    String       // "10:00"
+
+  @@index([tutorId])
+}
+
+model Booking {
+  id             String        @id @default(cuid())
+
+  studentId      String
+  student        User          @relation("StudentBookings", fields: [studentId], references: [id])
+
+  tutorId        String
+  tutor          TutorProfile  @relation("TutorBookings", fields: [tutorId], references: [id])
+
+  subject        String
+  scheduledAt    DateTime      // stored in UTC
+  durationMins   Int           @default(60)
+
+  status         BookingStatus @default(PENDING)
+  paymentStatus  PaymentStatus @default(UNPAID)
+  stripePaymentId String?
+
+  videoRoomUrl   String?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  review         Review?
+
+  @@index([tutorId, scheduledAt])
+  @@index([studentId])
+}
+
+model Review {
+  id        String       @id @default(cuid())
+
+  bookingId String       @unique
+  booking   Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  tutorId   String
+  tutor     TutorProfile @relation(fields: [tutorId], references: [id], onDelete: Cascade)
+
+  authorId  String
+  author    User         @relation("ReviewAuthor", fields: [authorId], references: [id])
+
+  rating    Int          // 1-5
+  comment   String?
+
+  createdAt DateTime     @default(now())
+}
+
+model Message {
+  id         String   @id @default(cuid())
+
+  senderId   String
+  sender     User     @relation("MessageSender", fields: [senderId], references: [id])
+
+  receiverId String
+  receiver   User     @relation("MessageReceiver", fields: [receiverId], references: [id])
+
+  content    String
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([senderId, receiverId])
+}
