@@ -30,9 +30,9 @@ export default function TutorProfilePage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/tutors`)
-      .then((r) => r.json())
-      .then((data: Tutor[]) => setTutor(data.find((t) => t.id === id) ?? null));
+    fetch(`/api/tutors/${id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => setTutor(data));
   }, [id]);
 
   async function handleBook(e: React.FormEvent) {
