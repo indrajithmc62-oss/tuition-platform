@@ -13,6 +13,12 @@ type Tutor = {
   user: { name: string; image: string | null };
 };
 
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
 export default function TutorProfilePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -24,8 +30,6 @@ export default function TutorProfilePage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    // Simple approach: fetch the full list and find this tutor.
-    // For a larger app, add a GET /api/tutors/[id] route instead.
     fetch(`/api/tutors`)
       .then((r) => r.json())
       .then((data: Tutor[]) => setTutor(data.find((t) => t.id === id) ?? null));
@@ -36,36 +40,88 @@ export default function TutorProfilePage() {
     setStatus(null);
     setSubmitting(true);
 
-    // Combine date + time into a UTC ISO string.
-    // NOTE: for production, capture the student's timezone explicitly
-    // rather than relying on the browser's local time.
-    const scheduledAt = new Date(`${date}T${time}:00`).toISOString();
+    try {
+      // Step 1: create the PENDING/UNPAID booking
+      const scheduledAt = new Date(`${date}T${time}:00`).toISOString();
 
-    const res = await fetch("/api/bookings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        tutorId: id,
-        subject,
-        scheduledAt,
-        durationMins: 60,
-      }),
-    });
+      const bookingRes = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tutorId: id,
+          subject,
+          scheduledAt,
+          durationMins: 60,
+        }),
+      });
 
-    setSubmitting(false);
+      if (bookingRes.status === 401) {
+        setStatus("Please log in first.");
+        setSubmitting(false);
+        return;
+      }
+      if (!bookingRes.ok) {
+        const data = await bookingRes.json();
+        setStatus(data.error ?? "Something went wrong.");
+        setSubmitting(false);
+        return;
+      }
 
-    if (res.status === 401) {
-      setStatus("Please log in first.");
-      return;
+      const booking = await bookingRes.json();
+
+      // Step 2: create a Razorpay order for this booking
+      const orderRes = await fetch(`/api/bookings/${booking.id}/create-order`, {
+        method: "POST",
+      });
+      if (!orderRes.ok) {
+        setStatus("Booking created, but payment setup failed. Check your dashboard.");
+        setSubmitting(false);
+        return;
+      }
+      const order = await orderRes.json();
+
+      // Step 3: open Razorpay checkout
+      const razorpay = new window.Razorpay({
+        key: order.keyId,
+        amount: order.amount,
+        currency: order.currency,
+        order_id: order.orderId,
+        name: "TuitionHub",
+        description: `${subject} session with ${tutor?.user.name}`,
+        handler: async function (response: any) {
+          // Step 4: verify payment on the server
+          const verifyRes = await fetch(`/api/bookings/${booking.id}/verify-payment`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            }),
+          });
+
+          if (verifyRes.ok) {
+            setStatus("Payment successful! Redirecting to your dashboard...");
+            setTimeout(() => router.push("/dashboard"), 1200);
+          } else {
+            setStatus("Payment verification failed. Please contact support.");
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setStatus("Payment cancelled. Your booking is saved as unpaid — you can pay later from your dashboard.");
+            setSubmitting(false);
+          },
+        },
+        theme: { color: "#000000" },
+      });
+
+      razorpay.open();
+    } catch (err) {
+      console.error(err);
+      setStatus("Something went wrong.");
+      setSubmitting(false);
     }
-    if (!res.ok) {
-      const data = await res.json();
-      setStatus(data.error ?? "Something went wrong.");
-      return;
-    }
-
-    setStatus("Booked! Redirecting to your dashboard...");
-    setTimeout(() => router.push("/dashboard"), 1200);
   }
 
   if (!tutor) return <p className="text-center mt-10">Loading...</p>;
@@ -111,7 +167,7 @@ export default function TutorProfilePage() {
             disabled={submitting}
             className="bg-black text-white px-4 py-2 rounded-md disabled:opacity-50"
           >
-            {submitting ? "Booking..." : "Request booking"}
+            {submitting ? "Processing..." : "Book & Pay"}
           </button>
         </form>
       </div>
