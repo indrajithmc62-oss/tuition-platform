@@ -11,6 +11,9 @@ export async function GET(
     where: { id },
     include: {
       user: { select: { name: true, image: true } },
+      availability: {
+        orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
+      },
     },
   });
 

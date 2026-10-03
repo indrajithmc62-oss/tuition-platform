@@ -21,6 +21,33 @@ export async function POST(req: Request) {
     const data = bookingSchema.parse(body);
     const scheduledAt = new Date(data.scheduledAt);
 
+    // Check the tutor has an availability window covering this slot.
+    // NOTE: this compares in UTC. Since availability is stored as plain
+    // "HH:MM" strings with no timezone, this assumes the tutor sets their
+    // availability in the same timezone the server runs in. Good enough
+    // for a single-timezone MVP; a multi-timezone version would need to
+    // store the tutor's timezone and convert explicitly.
+    const dayOfWeek = scheduledAt.getUTCDay();
+    const requestedTime = `${String(scheduledAt.getUTCHours()).padStart(2, "0")}:${String(
+      scheduledAt.getUTCMinutes()
+    ).padStart(2, "0")}`;
+
+    const matchingSlot = await prisma.availability.findFirst({
+      where: {
+        tutorId: data.tutorId,
+        dayOfWeek,
+        startTime: { lte: requestedTime },
+        endTime: { gt: requestedTime },
+      },
+    });
+
+    if (!matchingSlot) {
+      return NextResponse.json(
+        { error: "That tutor isn't available at this time. Please pick a different slot." },
+        { status: 409 }
+      );
+    }
+
     // Prevent double-booking: check for an overlapping CONFIRMED/PENDING booking
     // for the same tutor at the same time.
     const conflict = await prisma.booking.findFirst({
@@ -48,9 +75,6 @@ export async function POST(req: Request) {
         paymentStatus: "UNPAID",
       },
     });
-
-    // NOTE: next step is to create a Stripe Checkout session here and
-    // redirect the student to pay; on webhook success, flip status to CONFIRMED.
 
     return NextResponse.json(booking, { status: 201 });
   } catch (err: any) {

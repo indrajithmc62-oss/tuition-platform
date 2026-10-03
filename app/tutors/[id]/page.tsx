@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+type Availability = { dayOfWeek: number; startTime: string; endTime: string };
+
 type Tutor = {
   id: string;
   bio: string | null;
@@ -11,6 +15,7 @@ type Tutor = {
   ratingAvg: number;
   ratingCount: number;
   user: { name: string; image: string | null };
+  availability: Availability[];
 };
 
 declare global {
@@ -41,8 +46,7 @@ export default function TutorProfilePage() {
     setSubmitting(true);
 
     try {
-      // Step 1: create the PENDING/UNPAID booking
-      const scheduledAt = new Date(`${date}T${time}:00`).toISOString();
+      const scheduledAt = new Date(`${date}T${time}:00Z`).toISOString();
 
       const bookingRes = await fetch("/api/bookings", {
         method: "POST",
@@ -69,7 +73,6 @@ export default function TutorProfilePage() {
 
       const booking = await bookingRes.json();
 
-      // Step 2: create a Razorpay order for this booking
       const orderRes = await fetch(`/api/bookings/${booking.id}/create-order`, {
         method: "POST",
       });
@@ -80,7 +83,6 @@ export default function TutorProfilePage() {
       }
       const order = await orderRes.json();
 
-      // Step 3: open Razorpay checkout
       const razorpay = new window.Razorpay({
         key: order.keyId,
         amount: order.amount,
@@ -89,7 +91,6 @@ export default function TutorProfilePage() {
         name: "TuitionHub",
         description: `${subject} session with ${tutor?.user.name}`,
         handler: async function (response: any) {
-          // Step 4: verify payment on the server
           const verifyRes = await fetch(`/api/bookings/${booking.id}/verify-payment`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -113,7 +114,7 @@ export default function TutorProfilePage() {
             setSubmitting(false);
           },
         },
-        theme: { color: "#000000" },
+        theme: { color: "#14213d" },
       });
 
       razorpay.open();
@@ -128,18 +129,37 @@ export default function TutorProfilePage() {
 
   return (
     <div className="max-w-2xl mx-auto mt-10 p-6">
-      <h1 className="text-2xl font-semibold">{tutor.user.name}</h1>
-      <p className="text-gray-600 mt-1">{tutor.subjects.join(", ")}</p>
-      <p className="text-gray-500 mt-1">
+      <h1 className="font-display text-2xl font-semibold text-ink">{tutor.user.name}</h1>
+      <p className="text-ink/70 mt-1">{tutor.subjects.join(", ")}</p>
+      <p className="text-ink/50 mt-1">
         ⭐ {tutor.ratingAvg.toFixed(1)} ({tutor.ratingCount} reviews) · ${tutor.hourlyRate}/hr
       </p>
-      <p className="mt-4">{tutor.bio}</p>
+      <p className="mt-4 text-ink">{tutor.bio}</p>
 
-      <div className="border-t mt-8 pt-6">
-        <h2 className="text-lg font-medium mb-4">Book a session</h2>
+      <div className="mt-6">
+        <h2 className="font-display text-sm font-semibold text-ink/60 uppercase tracking-wide">
+          Availability
+        </h2>
+        {tutor.availability.length === 0 ? (
+          <p className="text-ink/50 text-sm mt-2">
+            This tutor hasn't set their availability yet.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {tutor.availability.map((slot, i) => (
+              <li key={i} className="text-sm text-ink/70">
+                {DAYS[slot.dayOfWeek]}: {slot.startTime} – {slot.endTime}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-t border-mist mt-8 pt-6">
+        <h2 className="font-display text-lg font-medium text-ink mb-4">Book a session</h2>
         <form onSubmit={handleBook} className="space-y-3">
           <input
-            className="w-full border rounded-md p-2"
+            className="w-full border border-mist rounded-md p-2"
             placeholder="Subject"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
@@ -147,25 +167,28 @@ export default function TutorProfilePage() {
           />
           <div className="flex gap-3">
             <input
-              className="border rounded-md p-2 flex-1"
+              className="border border-mist rounded-md p-2 flex-1"
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               required
             />
             <input
-              className="border rounded-md p-2 flex-1"
+              className="border border-mist rounded-md p-2 flex-1"
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
               required
             />
           </div>
-          {status && <p className="text-sm">{status}</p>}
+          <p className="text-xs text-ink/50">
+            Pick a time within the tutor's availability listed above — bookings outside those windows will be declined.
+          </p>
+          {status && <p className="text-sm text-ink">{status}</p>}
           <button
             type="submit"
             disabled={submitting}
-            className="bg-black text-white px-4 py-2 rounded-md disabled:opacity-50"
+            className="bg-ink text-paper px-4 py-2 rounded-md hover:bg-marigold transition-colors disabled:opacity-50"
           >
             {submitting ? "Processing..." : "Book & Pay"}
           </button>
