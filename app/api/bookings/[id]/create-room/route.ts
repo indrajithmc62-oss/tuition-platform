@@ -5,6 +5,21 @@ import jwt from "jsonwebtoken";
 import fs from "fs";
 import path from "path";
 
+function loadPrivateKey(): string | null {
+  // Online (Vercel): the key comes from a setting. "\n" is turned back into real line breaks.
+  const fromEnv = process.env.JAAS_PRIVATE_KEY;
+  if (fromEnv) return fromEnv.replace(/\\n/g, "\n");
+
+  // Local: the key comes from the file
+  const keyPath = process.env.JAAS_PRIVATE_KEY_PATH;
+  if (!keyPath) return null;
+  try {
+    return fs.readFileSync(path.join(process.cwd(), keyPath), "utf8");
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -41,20 +56,17 @@ export async function POST(
 
   const appId = process.env.JAAS_APP_ID;
   const keyId = process.env.JAAS_KEY_ID;
-  const keyPath = process.env.JAAS_PRIVATE_KEY_PATH;
-  if (!appId || !keyId || !keyPath) {
+  if (!appId || !keyId) {
     return NextResponse.json(
       { error: "Video settings are missing in .env" },
       { status: 500 }
     );
   }
 
-  let privateKey: string;
-  try {
-    privateKey = fs.readFileSync(path.join(process.cwd(), keyPath), "utf8");
-  } catch {
+  const privateKey = loadPrivateKey();
+  if (!privateKey) {
     return NextResponse.json(
-      { error: "Could not read the JaaS private key file" },
+      { error: "Could not read the JaaS private key" },
       { status: 500 }
     );
   }
