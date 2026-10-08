@@ -36,6 +36,14 @@ export async function POST(
     return NextResponse.json({ error: "Already paid" }, { status: 409 });
   }
 
+  // An expired (cancelled) booking can't be paid. The student must book again.
+  if (booking.status === "CANCELLED") {
+    return NextResponse.json(
+      { error: "This booking expired because it wasn't paid in time. Please book the session again." },
+      { status: 409 }
+    );
+  }
+
   // Razorpay expects the amount in the smallest currency unit (paise for INR)
   const amountInPaise = Math.round(
     booking.tutor.hourlyRate * (booking.durationMins / 60) * 100

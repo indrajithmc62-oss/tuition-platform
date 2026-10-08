@@ -30,6 +30,12 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum PayoutStatus {
+  NONE      // not paid by the student yet, so nothing is owed
+  PENDING   // student paid, tutor has not been paid yet
+  PAID      // tutor has been paid out
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String
@@ -95,6 +101,12 @@ model Booking {
   status         BookingStatus @default(PENDING)
   paymentStatus  PaymentStatus @default(UNPAID)
   stripePaymentId String?
+
+  // Money split, filled in when the payment is verified
+  platformFee    Float         @default(0)
+  tutorEarning   Float         @default(0)
+  payoutStatus   PayoutStatus  @default(NONE)
+  paidOutAt      DateTime?
 
   videoRoomUrl   String?
 

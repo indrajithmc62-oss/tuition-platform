@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
+import { expireUnpaidBookings } from "@/lib/expire-bookings";
 
 const bookingSchema = z.object({
   tutorId: z.string(),
@@ -16,10 +17,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const userId = (session.user as any).id;
+  const role = (session.user as any).role;
+
+  // Only students can book sessions
+  if (role !== "STUDENT") {
+    return NextResponse.json(
+      { error: "Only student accounts can book sessions." },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await req.json();
     const data = bookingSchema.parse(body);
     const scheduledAt = new Date(data.scheduledAt);
+
+    // Nobody can book their own tutor profile
+    const tutorProfile = await prisma.tutorProfile.findUnique({
+      where: { id: data.tutorId },
+      select: { userId: true },
+    });
+    if (!tutorProfile) {
+      return NextResponse.json({ error: "Tutor not found" }, { status: 404 });
+    }
+    if (tutorProfile.userId === userId) {
+      return NextResponse.json(
+        { error: "You can't book a session with yourself." },
+        { status: 403 }
+      );
+    }
+
+    // Free up hours held by unpaid bookings older than 15 minutes
+    await expireUnpaidBookings();
 
     // Check the tutor has an availability window covering this slot.
     // NOTE: this compares in UTC. Since availability is stored as plain
@@ -66,7 +96,7 @@ export async function POST(req: Request) {
 
     const booking = await prisma.booking.create({
       data: {
-        studentId: (session.user as any).id,
+        studentId: userId,
         tutorId: data.tutorId,
         subject: data.subject,
         scheduledAt,
@@ -101,8 +131,11 @@ export async function GET() {
         ? { tutor: { userId } }
         : { studentId: userId },
     include: {
-      tutor: { include: { user: { select: { name: true } } } },
+      tutor: {
+        include: { user: { select: { name: true } } },
+      },
       student: { select: { name: true } },
+      review: { select: { rating: true } },
     },
     orderBy: { scheduledAt: "asc" },
   });

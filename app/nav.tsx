@@ -5,6 +5,7 @@ import { useSession, signOut } from "next-auth/react";
 
 export default function Nav() {
   const { data: session } = useSession();
+  const role = (session?.user as any)?.role;
 
   return (
     <nav className="border-b border-mist bg-paper">
@@ -13,14 +14,23 @@ export default function Nav() {
           TuitionHub
         </Link>
         <div className="flex gap-6 items-center text-sm text-ink">
-          <Link href="/tutors" className="hover:text-marigold transition-colors">
-            Find a tutor
-          </Link>
+          {role !== "TUTOR" && role !== "ADMIN" && (
+            <Link href="/tutors" className="hover:text-marigold transition-colors">
+              Find a tutor
+            </Link>
+          )}
+          {role === "ADMIN" && (
+            <Link href="/admin" className="hover:text-marigold transition-colors">
+              Admin
+            </Link>
+          )}
           {session?.user ? (
             <>
-              <Link href="/dashboard" className="hover:text-marigold transition-colors">
-                Dashboard
-              </Link>
+              {role !== "ADMIN" && (
+                <Link href="/dashboard" className="hover:text-marigold transition-colors">
+                  Dashboard
+                </Link>
+              )}
               <button
                 onClick={() => signOut({ callbackUrl: "/" })}
                 className="hover:text-coral transition-colors"
