@@ -10,11 +10,11 @@ function loadPrivateKey(): string | null {
   const fromEnv = process.env.JAAS_PRIVATE_KEY;
   if (fromEnv) return fromEnv.replace(/\\n/g, "\n");
 
-  // Local: the key comes from the file
+  // Local only: read the key from a file
   const keyPath = process.env.JAAS_PRIVATE_KEY_PATH;
   if (!keyPath) return null;
   try {
-    return fs.readFileSync(path.join(process.cwd(), keyPath), "utf8");
+    return fs.readFileSync(/* turbopackIgnore: true */ path.resolve(keyPath), "utf8");
   } catch {
     return null;
   }
